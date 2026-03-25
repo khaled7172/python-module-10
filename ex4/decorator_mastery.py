@@ -3,11 +3,17 @@ import time
 from typing import Callable, Any
 
 
-# 1. spell_timer decorator
-def spell_timer(func: Callable) -> Callable:
-    """Decorator that measures function execution time."""
+def spell_timer(func: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    A straightforward decorator.
+    @functools.wraps(func) copies the original function's __name__,
+    __doc__, etc. onto wrapper so it doesn't lose its identity.
+    The wrapper records time before and after calling func,
+    prints the elapsed time, then returns the result unchanged.
+    Applied in __main__ directly with @spell_timer above fireball.
+    """
     @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         print(f"Casting {func.__name__}...")
         start_time = time.time()
         result = func(*args, **kwargs)
@@ -18,20 +24,32 @@ def spell_timer(func: Callable) -> Callable:
     return wrapper
 
 
-# 2. power_validator decorator factory
-def power_validator(min_power: int) -> Callable:
-    """Decorator factory that validates the 'power' argument of a method."""
-    def decorator(func: Callable) -> Callable:
+def power_validator(
+        min_power: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    A decorator factory.
+    you call it with min_power to get a decorator,
+    which you then apply to a function.
+    The tricky part is the argument sniffing inside wrapper:
+    len(args) >= 3 assumes an
+    instance method signature (self, spell_name, power)
+    so args[2] is power
+    elif args handles a plain function where power is args[0]
+    else falls back to kwargs.get("power", 0)
+    If the extracted value is an int and meets the minimum,
+    it calls through.
+    Otherwise returns the fizzle string.
+    This is fragile by design, it's positional guesswork,
+    which is why proper validators usually require the
+    argument to be passed as a keyword.
+    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            # For instance methods, 'power' is always args[2] (self,
-            # spell_name, power)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             if len(args) >= 3:
                 power_arg = args[2]
-            # For functions without self, power is args[0]
             elif args:
                 power_arg = args[0]
-            # Check kwargs
             else:
                 power_arg = kwargs.get("power", 0)
 
@@ -43,12 +61,20 @@ def power_validator(min_power: int) -> Callable:
     return decorator
 
 
-# 3. retry_spell decorator factory
-def retry_spell(max_attempts: int) -> Callable:
-    """Decorator factory that retries a function if it raises an exception."""
-    def decorator(func: Callable) -> Callable:
+def retry_spell(
+        max_attempts: int
+        ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    Another factory.
+    The wrapper loops max_attempts times,
+    returning immediately on success.
+    On exception, if there are attempts left it prints
+    a retry message,
+    otherwise returns a failure string.
+    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             for attempt in range(1, max_attempts + 1):
                 try:
                     return func(*args, **kwargs)
@@ -57,17 +83,27 @@ def retry_spell(max_attempts: int) -> Callable:
                         print(
                             f"Spell failed, retrying... (attempt {attempt}/"
                             f"{max_attempts})"
-                            )
+                        )
                     else:
-                        return (f"Spell casting failed after {max_attempts}"
+                        return (f"Spell casting failed after {max_attempts} "
                                 f"attempts"
                                 )
         return wrapper
     return decorator
 
 
-# 4. MageGuild class
 class MageGuild:
+    """
+    validate_mage_name is a @staticmethod
+    it belongs to the class but takes no self or cls.
+    Called directly on the class: MageGuild.validate_mage_name(...).
+    It checks length >= 3 and that every character is a letter or space.
+    cast_spell is a regular instance method decorated with
+    @power_validator(min_power=10).
+    When called, args is (self, "Lightning", 15)
+    so args[2] is 15, which passes.
+    With 5, it fails and returns the fizzle string.
+    """
     @staticmethod
     def validate_mage_name(name: str) -> bool:
         """Static method: name must be at least 3 letters and
@@ -79,14 +115,13 @@ class MageGuild:
         return f"Successfully cast {spell_name} with {power} power"
 
 
-# --- Test block ---
 if __name__ == "__main__":
     print()
     print("Testing spell timer...")
 
     @spell_timer
-    def fireball():
-        time.sleep(0.1)  # simulate casting time
+    def fireball() -> str:
+        time.sleep(0.1)
         return "Fireball cast!"
 
     result = fireball()
@@ -94,10 +129,9 @@ if __name__ == "__main__":
     print()
 
     print("Testing MageGuild...")
-    print(MageGuild.validate_mage_name("Gandalf"))   # True
-    print(MageGuild.validate_mage_name("Al"))        # False
+    print(MageGuild.validate_mage_name("Gandalf"))
+    print(MageGuild.validate_mage_name("Al"))
 
     guild = MageGuild()
-    print(guild.cast_spell("Lightning", 15))         # Succeeds
-    # Fails: insufficient power
+    print(guild.cast_spell("Lightning", 15))
     print(guild.cast_spell("Lightning", 5))
